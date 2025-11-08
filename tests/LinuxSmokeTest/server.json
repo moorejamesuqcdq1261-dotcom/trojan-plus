@@ -29,14 +29,5 @@
         "reuse_port": false,
         "fast_open": false,
         "fast_open_qlen": 20
-    },
-    "mysql": {
-        "enabled": false,
-        "server_addr": "",
-        "server_port": 0,
-        "database": "",
-        "username": "",
-        "password": "",
-        "cafile": ""
     }
 }

@@ -25,7 +25,7 @@
 
 using namespace std;
 PipelineComponent::SessionIdType PipelineComponent::s_session_id_counter = 0;
-set<PipelineComponent::SessionIdType> PipelineComponent::s_session_used_ids;
+vector<PipelineComponent::SessionIdType> PipelineComponent::s_free_session_ids;
 
 PipelineComponent::PipelineComponent(const Config& _config)
     : m_session_id(0),
@@ -42,22 +42,25 @@ PipelineComponent::PipelineComponent(const Config& _config)
 
 void PipelineComponent::allocate_session_id() {
     _guard;
-    if (s_session_used_ids.size() >= numeric_limits<SessionIdType>::max()) {
+    if (s_session_id_counter == numeric_limits<SessionIdType>::max() && s_free_session_ids.empty()) {
         throw logic_error("session id is over !! pipeline reached the session id limits !!");
     }
 
-    do {
+    if (!s_free_session_ids.empty()) {
+        m_session_id = s_free_session_ids.back();
+        s_free_session_ids.pop_back();
+    } else {
         m_session_id = s_session_id_counter++;
-    } while (s_session_used_ids.find(m_session_id) != s_session_used_ids.end());
-
-    s_session_used_ids.insert(m_session_id);
+    }
     _unguard;
 }
 
 void PipelineComponent::free_session_id() {
     _guard;
-    s_session_used_ids.erase(m_session_id);
-    m_session_id = 0;
+    if (m_session_id != 0) {
+        s_free_session_ids.emplace_back(m_session_id);
+        m_session_id = 0;
+    }
     _unguard;
 }
 
@@ -68,5 +71,24 @@ void PipelineComponent::pipeline_in_recv(const string_view& data) {
     }
 
     pipeline_data_cache.push_data(data);
+    _unguard;
+}
+
+void PipelineComponent::set_pipeline_owner(const shared_ptr<Pipeline>& pipeline) {
+    _guard;
+    pipeline_owner = pipeline;
+    _unguard;
+}
+
+shared_ptr<Pipeline> PipelineComponent::get_pipeline_owner() const {
+    _guard;
+    auto owner = pipeline_owner.lock();
+    _unguard;
+    return owner;
+}
+
+void PipelineComponent::reset_pipeline_owner() {
+    _guard;
+    pipeline_owner.reset();
     _unguard;
 }

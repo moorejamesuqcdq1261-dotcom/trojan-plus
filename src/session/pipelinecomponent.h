@@ -23,12 +23,15 @@
 #define _PIPELINE_COMPONENT_H
 
 #include <cstdint>
-#include <set>
+#include <limits>
+#include <memory>
+#include <vector>
 #include <stdexcept>
 
 #include "core/utils.h"
 
 class Config;
+class Pipeline;
 class Service;
 class PipelineComponent {
 
@@ -38,7 +41,8 @@ class PipelineComponent {
   private:
     // session id counter for pipeline mode
     static SessionIdType s_session_id_counter;
-    static std::set<SessionIdType> s_session_used_ids;
+    static std::vector<SessionIdType> s_free_session_ids;
+    std::weak_ptr<Pipeline> pipeline_owner;
 
     SessionIdType m_session_id;
     bool m_is_use_pipeline;
@@ -65,6 +69,9 @@ class PipelineComponent {
 
     [[nodiscard]] inline bool is_using_pipeline() const { return m_is_use_pipeline; }
     inline void set_use_pipeline() { m_is_use_pipeline = true; };
+    void set_pipeline_owner(const std::shared_ptr<Pipeline>& pipeline);
+    std::shared_ptr<Pipeline> get_pipeline_owner() const;
+    void reset_pipeline_owner();
 
     inline void recv_ack_cmd(size_t ack_count) { pipeline_ack_counter += ack_count; }
 

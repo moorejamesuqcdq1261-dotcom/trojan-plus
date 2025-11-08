@@ -23,6 +23,7 @@
 #ifndef _SESSION_H_
 #define _SESSION_H_
 
+#include <atomic>
 #include <ctime>
 #include <memory>
 
@@ -51,7 +52,7 @@ class Session : public std::enable_shared_from_this<Session> {
     bytes_stat stat;
     const char* session_name;
 
-    static size_t s_total_session_count;
+    static std::atomic_size_t s_total_session_count;
 
   protected:
     inline void set_session_name(const char* name) { session_name = name; }

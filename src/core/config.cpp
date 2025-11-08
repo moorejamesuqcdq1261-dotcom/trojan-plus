@@ -60,8 +60,6 @@ const static int default_ssl_shutdown_wait_time = 30;
 const static int default_tcp_fast_open_qlen   = 20;
 const static int default_tcp_connect_time_out = 10;
 
-const static uint16_t default_mysql_server_port = 3306;
-
 const static uint32_t default_experimental_pipeline_num        = 0;
 const static uint32_t default_experimental_pipeline_ack_window = 200;
 
@@ -173,14 +171,6 @@ void Config::populate(const ptree& tree) {
     tcp.use_tproxy       = tree.get("tcp.use_tproxy", false);
     tcp.fast_open_qlen   = tree.get("tcp.fast_open_qlen", default_tcp_fast_open_qlen);
     tcp.connect_time_out = tree.get("tcp.connect_time_out", default_tcp_connect_time_out);
-
-    mysql.enabled     = tree.get("mysql.enabled", false);
-    mysql.server_addr = tree.get("mysql.server_addr", string("127.0.0.1"));
-    mysql.server_port = tree.get("mysql.server_port", default_mysql_server_port);
-    mysql.database    = tree.get("mysql.database", string("trojan"));
-    mysql.username    = tree.get("mysql.username", string("trojan"));
-    mysql.password    = tree.get("mysql.password", string());
-    mysql.cafile      = tree.get("mysql.cafile", string());
 
     experimental.pipeline_num = tree.get("experimental.pipeline_num", default_experimental_pipeline_num);
     experimental.pipeline_ack_window =

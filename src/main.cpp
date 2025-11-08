@@ -27,10 +27,6 @@
 #include <iostream>
 #include <openssl/opensslv.h>
 
-#ifdef ENABLE_MYSQL
-#include <mysql.h>
-#endif // ENABLE_MYSQL
-
 #include "core/service.h"
 #include "core/version.h"
 
@@ -101,11 +97,7 @@ int main(int argc, const char* argv[]) {
         }
         if (vm.count("version")) {
             Log::log(string("Boost ") + BOOST_LIB_VERSION + ", " + OpenSSL_version(OPENSSL_VERSION), Log::FATAL);
-#ifdef ENABLE_MYSQL
-            Log::log(string(" [Enabled] MySQL Support (") + mysql_get_client_info() + ')', Log::FATAL);
-#else  // ENABLE_MYSQL
-            Log::log("[Disabled] MySQL Support", Log::FATAL);
-#endif // ENABLE_MYSQL
+            Log::log("[Removed] MySQL Support", Log::FATAL);
 #ifdef TCP_FASTOPEN
             Log::log(" [Enabled] TCP_FASTOPEN Support", Log::FATAL);
 #else  // TCP_FASTOPEN

@@ -26,8 +26,8 @@
 #include <boost/asio/streambuf.hpp>
 #include <ctime>
 #include <functional>
-#include <list>
 #include <memory>
+#include <unordered_map>
 
 #include "core/config.h"
 #include "core/icmpd.h"
@@ -49,7 +49,7 @@ class Pipeline : public std::enable_shared_from_this<Pipeline> {
     bool connected;
     ReadBufWithGuard out_read_buf;
     boost::asio::ip::tcp::resolver resolver;
-    std::list<std::shared_ptr<Session>> sessions;
+    std::unordered_map<PipelineComponent::SessionIdType, std::shared_ptr<Session>> sessions;
     uint32_t pipeline_id;
     std::shared_ptr<icmpd> icmp_processor;
     boost::asio::ip::tcp::endpoint out_socket_endpoint;

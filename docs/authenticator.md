@@ -1,38 +1,9 @@
 # Authenticator
 
-Trojan servers can authenticate users according to not only passwords in the config file but also entries in a MySQL (MariaDB) database. To turn this functionality on, set `enabled` field in the MySQL config to `true` and correctly configure the server address, credentials, and etc. If you would like to connect to the database securely, you can to fill the `cafile` field indicating the CA file:
+Trojan Plus 目前仅使用配置文件中的 `password` 列表进行认证。服务端会将请求报文中携带的口令与配置文件里经过 SHA224 处理后的口令进行比对；配置加载时会自动对列表里的明文口令计算 SHA224，因此无需手动提供哈希值。
 
-```json
-"mysql": {
-    "enabled": true,
-    "server_addr": "127.0.0.1",
-    "server_port": 3306,
-    "database": "trojan",
-    "username": "trojan",
-    "password": "",
-    "cafile": ""
-}
-```
+请确保 `password` 数组中包含所有允许访问的口令，并为每个口令提供一个友好的名称（值为口令本身），用于在日志中标识用户。若数组为空，服务端将拒绝所有连接（对于管线模式也会立即断开以避免未定义行为）。
 
-The table has to be named `users`. An example table structure could be:
-
-```sql
-CREATE TABLE users (
-    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    username VARCHAR(64) NOT NULL,
-    password CHAR(56) NOT NULL,
-    quota BIGINT NOT NULL DEFAULT 0,
-    download BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    upload BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    INDEX (password)
-);
-```
-
-Note that trojan will only read/write the `password`, `quota`, `download`, and `upload` fields. Other fields exist for management convenience. The passwords stored in the table have to be hashed by SHA224 for efficiency and security reasons.
-
-Upon receiving a Trojan Request, **if the server fails to match the password with any passwords set in the config file**, it will query the database for the user. If it succeeds, trojan will check whether `download + upload < quota`; if so, the connection is granted. **A negative `quota` value means infinite quota.** After a connection is closed, trojan will increment `download` and `upload` fields of that user by the amount of data the user has used.
-
-The unit of `quota`, `download`, and `upload` fields is Byte.
+旧版的 MySQL/MariaDB 认证功能已被移除，以减少运行时依赖并改善性能。
 
 [Homepage](.) | [Prev Page](config) | [Next Page](build)

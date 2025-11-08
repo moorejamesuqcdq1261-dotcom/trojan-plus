@@ -24,10 +24,12 @@
 
 #include <cerrno>
 #include <chrono>
+#include <deque>
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 #include "session/clientsession.h"
 #include "session/forwardsession.h"
@@ -44,7 +46,6 @@ using namespace boost::asio::ssl;
 Service::Service(Config& config, bool test)
     : socket_acceptor(io_context),
       ssl_context(context::sslv23),
-      auth(nullptr),
       udp_socket(io_context),
       pipeline_select_idx(0),
       config(config) {
@@ -127,16 +128,6 @@ Service::Service(Config& config, bool test)
     }
 
     config.prepare_ssl_context(ssl_context, plain_http_response);
-
-    if (config.get_run_type() == Config::SERVER) {
-        if (config.get_mysql().enabled) {
-#ifdef ENABLE_MYSQL
-            auth = make_shared<Authenticator>(config);
-#else  // ENABLE_MYSQL
-            _log_with_date_time("MySQL is not supported", Log::WARN);
-#endif // ENABLE_MYSQL
-        }
-    }
 
     _unguard;
 }
@@ -223,98 +214,99 @@ void Service::prepare_pipelines() {
 
     if (config.get_run_type() != Config::SERVER && config.get_experimental().pipeline_num > 0) {
 
-        bool changed = clear_weak_ptr_list(pipelines);
+        const auto& experimental                         = config.get_experimental();
+        const auto& loadbalance_configs                  = experimental._pipeline_loadbalance_configs;
+        const auto& loadbalance_ssl_contexts             = experimental._pipeline_loadbalance_context;
+        const size_t target_per_group                    = experimental.pipeline_num;
+        const size_t group_count                         = loadbalance_configs.size() + 1;
+        bool changed                                     = clear_weak_ptr_list(pipelines);
+        auto resolve_index = [&](const Config* cfg) -> size_t {
+            if (cfg == &config) {
+                return 0;
+            }
+            for (size_t i = 0; i < loadbalance_configs.size(); ++i) {
+                if (cfg == loadbalance_configs[i].get()) {
+                    return i + 1;
+                }
+            }
+            return group_count;
+        };
 
-        size_t curr_num = 0;
-        for (const auto& p : pipelines) {
-            if (p.lock()->get_config() == config) {
-                curr_num++;
+        std::vector<size_t> counts(group_count, 0);
+        std::vector<std::deque<std::weak_ptr<Pipeline>>> buckets(group_count);
+        std::vector<std::weak_ptr<Pipeline>>             extras;
+
+        for (const auto& weak_pipeline : pipelines) {
+            if (auto pipeline = weak_pipeline.lock()) {
+                size_t idx = resolve_index(&(pipeline->get_config()));
+                if (idx < group_count) {
+                    counts[idx]++;
+                    buckets[idx].push_back(weak_pipeline);
+                } else {
+                    extras.push_back(weak_pipeline);
+                }
             }
         }
 
-        _log_with_date_time("[pipeline] current exist pipelines: " + to_string(curr_num), Log::INFO);
+        if (Log::level <= Log::INFO) {
+            _log_with_date_time("[pipeline] current exist pipelines: " + to_string(counts[0]), Log::INFO);
+        }
 
-        for (; curr_num < config.get_experimental().pipeline_num; curr_num++) {
-            auto pipeline = make_shared<Pipeline>(this, config, ssl_context);
+        auto add_pipeline = [&](size_t idx) {
+            std::shared_ptr<Pipeline> pipeline;
+            if (idx == 0) {
+                pipeline = make_shared<Pipeline>(this, config, ssl_context);
+            } else {
+                pipeline = make_shared<Pipeline>(this, *loadbalance_configs[idx - 1], *loadbalance_ssl_contexts[idx - 1]);
+            }
             pipeline->start();
-            pipelines.emplace_back(pipeline);
-            changed = true;
-
-            if (icmp_processor) {
+            if (idx == 0 && icmp_processor) {
                 pipeline->set_icmpd(icmp_processor);
             }
-            _log_with_date_time("[pipeline] start new pipeline, current: " + to_string(pipelines.size()) +
-                                  " max:" + to_string(config.get_experimental().pipeline_num),
-              Log::INFO);
+            buckets[idx].push_back(pipeline);
+            counts[idx]++;
+            changed = true;
+        };
+
+        for (size_t idx = 0; idx < group_count; ++idx) {
+            while (counts[idx] < target_per_group) {
+                add_pipeline(idx);
+            }
         }
 
-        if (!config.get_experimental().pipeline_loadbalance_configs.empty()) {
-            for (size_t i = 0; i < config.get_experimental()._pipeline_loadbalance_configs.size(); i++) {
+        if (changed) {
+            size_t total_entries = extras.size();
+            for (const auto& bucket : buckets) {
+                total_entries += bucket.size();
+            }
 
-                auto config_file    = config.get_experimental().pipeline_loadbalance_configs[i];
-                auto balance_config = config.get_experimental()._pipeline_loadbalance_configs[i];
-                auto balance_ssl    = config.get_experimental()._pipeline_loadbalance_context[i];
+            if (Log::level <= Log::INFO) {
+                _log_with_date_time("[pipeline] all pipelines prepared, total: " + to_string(total_entries), Log::INFO);
+            }
 
-                size_t curr_num = 0;
-                for (const auto& it : pipelines) {
-                    if (&(it.lock()->get_config()) == balance_config.get()) {
-                        curr_num++;
+            std::list<std::weak_ptr<Pipeline>> reordered;
+            while (reordered.size() < total_entries) {
+                bool appended = false;
+                for (size_t idx = 0; idx < group_count; ++idx) {
+                    if (!buckets[idx].empty()) {
+                        reordered.emplace_back(std::move(buckets[idx].front()));
+                        buckets[idx].pop_front();
+                        appended = true;
                     }
                 }
-
-                for (; curr_num < config.get_experimental().pipeline_num; curr_num++) {
-                    auto pipeline = make_shared<Pipeline>(this, *balance_config, *balance_ssl);
-                    pipeline->start();
-                    pipelines.emplace_back(pipeline);
-                    changed = true;
-
-                    _log_with_date_time("[pipeline] start a balance pipeline: " + config_file +
-                                          " current:" + to_string(pipelines.size()) +
-                                          " max:" + to_string(config.get_experimental().pipeline_num),
-                      Log::INFO);
+                if (!appended) {
+                    break;
                 }
             }
 
-            if (changed) {
-                // for default polling balance algorithm,
-                // need to arrage the pipeine from 00000011111122222333333... to 012301230123...
-                size_t config_idx  = 0;
-                size_t all_configs = config.get_experimental()._pipeline_loadbalance_configs.size() + 1;
+            for (auto& weak_pipeline : extras) {
+                reordered.emplace_back(std::move(weak_pipeline));
+            }
 
-                auto curr = pipelines.begin();
-                while (curr != pipelines.end()) {
-                    auto next = curr;
-                    next++;
+            pipelines.swap(reordered);
 
-                    while (next != pipelines.end()) {
-                        bool found                   = false;
-                        const auto* const config_ptr = &(next->lock()->get_config());
-                        if (config_idx == 0) {
-                            found = config_ptr == &config;
-                        } else {
-                            found = config_ptr ==
-                                    config.get_experimental()._pipeline_loadbalance_configs[config_idx - 1].get();
-                        }
-
-                        if (found) {
-                            std::iter_swap(curr, next);
-                            if (++config_idx >= all_configs) {
-                                config_idx = 0;
-                            }
-                            break;
-                        }
-
-                        next++;
-                    }
-
-                    curr++;
-                }
-
-                // auto it = pipelines.begin();
-                // while (it != pipelines.end()) {
-                //     _log_with_date_time("after arrage:" + to_string(it->lock()->config.remote_port));
-                //     ++it;
-                // }
+            if (pipeline_select_idx >= pipelines.size()) {
+                pipeline_select_idx = 0;
             }
         }
     }
@@ -382,26 +374,29 @@ void Service::session_async_send_to_pipeline(Session& session, PipelineRequest::
 
     if (config.get_experimental().pipeline_num > 0 && config.get_run_type() != Config::SERVER) {
 
-        Pipeline* pipeline = nullptr;
-        auto it            = pipelines.begin();
-        while (it != pipelines.end()) {
-            if (it->expired()) {
-                it = pipelines.erase(it);
-            } else {
-                auto p = it->lock();
-                if (p->is_in_pipeline(session)) {
-                    pipeline = p.get();
-                    break;
+        auto pipeline_shared = session.get_pipeline_component().get_pipeline_owner();
+        if (!pipeline_shared) {
+            auto it = pipelines.begin();
+            while (it != pipelines.end()) {
+                if (it->expired()) {
+                    it = pipelines.erase(it);
+                } else {
+                    auto p = it->lock();
+                    if (p->is_in_pipeline(session)) {
+                        pipeline_shared = p;
+                        session.get_pipeline_component().set_pipeline_owner(p);
+                        break;
+                    }
+                    ++it;
                 }
-                ++it;
             }
         }
 
-        if (pipeline == nullptr) {
+        if (!pipeline_shared) {
             _log_with_date_time("pipeline is broken, destory session", Log::WARN);
             sent_handler(boost::asio::error::broken_pipe);
         } else {
-            pipeline->session_async_send_cmd(cmd, session, data, move(sent_handler), ack_count);
+            pipeline_shared->session_async_send_cmd(cmd, session, data, move(sent_handler), ack_count);
         }
     } else {
         _log_with_date_time("can't send data via pipeline!", Log::FATAL);
@@ -429,20 +424,28 @@ void Service::session_async_send_to_pipeline_icmp(
 
 void Service::session_destroy_in_pipeline(Session& session) {
     _guard;
-    auto it = pipelines.begin();
-    while (it != pipelines.end()) {
-        if (it->expired()) {
-            it = pipelines.erase(it);
-        } else {
-            auto p = it->lock();
-            if (p->is_in_pipeline(session)) {
-                _log_with_date_time("pipeline " + to_string(p->get_pipeline_id()) +
-                                    " destroy session_id:" + to_string(session.get_session_id()));
-                p->session_destroyed(session);
-                break;
+    auto pipeline_shared = session.get_pipeline_component().get_pipeline_owner();
+    if (!pipeline_shared) {
+        auto it = pipelines.begin();
+        while (it != pipelines.end()) {
+            if (it->expired()) {
+                it = pipelines.erase(it);
+            } else {
+                auto p = it->lock();
+                if (p->is_in_pipeline(session)) {
+                    pipeline_shared = p;
+                    session.get_pipeline_component().set_pipeline_owner(p);
+                    break;
+                }
+                ++it;
             }
-            ++it;
         }
+    }
+
+    if (pipeline_shared) {
+        _log_with_date_time("pipeline " + to_string(pipeline_shared->get_pipeline_id()) +
+                              " destroy session_id:" + to_string(session.get_session_id()));
+        pipeline_shared->session_destroyed(session);
     }
     _unguard;
 }
@@ -481,12 +484,12 @@ void Service::async_accept() {
     if (config.get_run_type() == Config::SERVER) {
         if (config.get_experimental().pipeline_num > 0) {
             // start a pipeline mode in server run_type
-            auto pipeline = make_shared<PipelineSession>(this, config, ssl_context, auth, plain_http_response);
+            auto pipeline = make_shared<PipelineSession>(this, config, ssl_context, plain_http_response);
             pipeline->set_icmpd(icmp_processor);
 
             session = pipeline;
         } else {
-            session = make_shared<ServerSession>(this, config, ssl_context, auth, plain_http_response);
+            session = make_shared<ServerSession>(this, config, ssl_context, plain_http_response);
         }
     } else {
         if (config.get_run_type() == Config::FORWARD) {
