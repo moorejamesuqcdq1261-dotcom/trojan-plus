@@ -189,6 +189,9 @@ SendDataCache::SendDataCache() : is_async_sending(false), destroyed(false) {
 
     current_recv_handler = &handler_queue;
     current_recv_queue   = &data_queue;
+
+    handler_queue.reserve(16);
+    handler_queue_other.reserve(16);
     _unguard;
 }
 

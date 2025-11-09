@@ -35,6 +35,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifndef _WIN32
@@ -278,6 +279,7 @@ class ReadDataCache {
 
 class SendingDataAllocator {
     std::vector<std::shared_ptr<boost::asio::streambuf>> allocated;
+    std::unordered_set<boost::asio::streambuf*> allocated_ptrs;
     std::list<std::shared_ptr<boost::asio::streambuf>> free_bufs;
 
   public:
@@ -287,6 +289,7 @@ class SendingDataAllocator {
         if (free_bufs.empty()) {
             buf = std::make_shared<boost::asio::streambuf>();
             allocated.push_back(buf);
+            allocated_ptrs.insert(buf.get());
         } else {
             buf = free_bufs.front();
             free_bufs.pop_front();
@@ -299,15 +302,7 @@ class SendingDataAllocator {
 
     void free(const std::shared_ptr<boost::asio::streambuf>& buf) {
         _guard;
-        bool found = false;
-        for (const auto& it : allocated) {
-            if (it.get() == buf.get()) {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
+        if (allocated_ptrs.find(buf.get()) == allocated_ptrs.end()) {
             throw std::logic_error("cannot find the buf in SendingDataAllocator!");
         }
 

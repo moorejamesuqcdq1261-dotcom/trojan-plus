@@ -94,11 +94,13 @@ void UDPForwardSession::start_udp(const std::string_view& data) {
                                       out_udp_endpoint.address().to_string(), out_udp_endpoint.port(), false));
     process(udp_recv_endpoint, data);
 
-    _log_with_endpoint(udp_recv_endpoint,
-      "session_id: " + to_string(get_session_id()) + " forwarding UDP packets to " +
-        out_udp_endpoint.address().to_string() + ':' + to_string(out_udp_endpoint.port()) + " via " +
-        get_config().get_remote_addr() + ':' + to_string(get_config().get_remote_port()),
-      Log::INFO);
+    if (Log::level <= Log::INFO) {
+        _log_with_endpoint(udp_recv_endpoint,
+          "session_id: " + to_string(get_session_id()) + " forwarding UDP packets to " +
+            out_udp_endpoint.address().to_string() + ':' + to_string(out_udp_endpoint.port()) + " via " +
+            get_config().get_remote_addr() + ':' + to_string(get_config().get_remote_port()),
+          Log::INFO);
+    }
 
     if (get_pipeline_component().is_using_pipeline()) {
         cb();
@@ -173,10 +175,13 @@ void UDPForwardSession::in_recv(const string_view& data) {
     size_t length = data.length();
     get_stat().inc_sent_len(length);
 
-    _log_with_endpoint(
-      udp_recv_endpoint, "session_id: " + to_string(get_session_id()) + " sent a UDP packet of length " +
-                           to_string(length) + " bytes to " + out_udp_endpoint.address().to_string() + ':' +
-                           to_string(out_udp_endpoint.port()) + " sent_len: " + to_string(get_stat().get_sent_len()));
+    if (Log::level <= Log::INFO) {
+        _log_with_endpoint(
+          udp_recv_endpoint, "session_id: " + to_string(get_session_id()) + " sent a UDP packet of length " +
+                               to_string(length) + " bytes to " + out_udp_endpoint.address().to_string() + ':' +
+                               to_string(out_udp_endpoint.port()) +
+                               " sent_len: " + to_string(get_stat().get_sent_len()));
+    }
 
     UDPPacket::generate(out_write_buf, out_udp_endpoint.address().to_string(), out_udp_endpoint.port(), data);
     if (status == FORWARD) {
@@ -203,10 +208,12 @@ void UDPForwardSession::out_recv(const string_view& data) {
                 }
                 break;
             }
-            _log_with_endpoint(udp_recv_endpoint, "session_id: " + to_string(get_session_id()) +
-                                                    " received a UDP packet of length " + to_string(packet.length) +
-                                                    " bytes from " + packet.address.address + ':' +
-                                                    to_string(packet.address.port));
+            if (Log::level <= Log::INFO) {
+                _log_with_endpoint(udp_recv_endpoint, "session_id: " + to_string(get_session_id()) +
+                                                        " received a UDP packet of length " + to_string(packet.length) +
+                                                        " bytes from " + packet.address.address + ':' +
+                                                        to_string(packet.address.port));
+            }
 
             if (is_nat) {
                 boost::system::error_code ec;
