@@ -51,10 +51,9 @@ UDPForwardSession::UDPForwardSession(Service* _service, const Config& config, co
     out_udp_endpoint  = udp::endpoint(boost::asio::ip::make_address(targetdst.first), targetdst.second);
     set_in_endpoint(tcp::endpoint(endpoint.address(), endpoint.port()));
     set_udp_forward_session(true);
-    get_pipeline_component().allocate_session_id();
 }
 
-UDPForwardSession::~UDPForwardSession() { get_pipeline_component().free_session_id(); }
+UDPForwardSession::~UDPForwardSession() {}
 
 int UDPForwardSession::get_udp_timer_timeout_val() const {
     return is_dns ? get_config().get_dns().udp_timeout : SocketSession::get_udp_timer_timeout_val();

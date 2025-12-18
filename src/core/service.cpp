@@ -359,6 +359,7 @@ void Service::start_session(const shared_ptr<Session>& session, SentHandler&& st
                               " start session_id: " + to_string(session->get_session_id()),
           Log::INFO);
         session->get_pipeline_component().set_use_pipeline();
+        session->get_pipeline_component().allocate_session_id();
         pipeline->session_start(*(session.get()), move(started_handler));
     } else {
         started_handler(boost::system::error_code());

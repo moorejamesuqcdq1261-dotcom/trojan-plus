@@ -40,10 +40,9 @@ ClientSession::ClientSession(Service* _service, const Config& config, context& s
       out_socket(_service->get_io_context(), ssl_context),
       udp_socket(_service->get_io_context()) {
     set_session_name("ClientSession");
-    get_pipeline_component().allocate_session_id();
 }
 
-ClientSession::~ClientSession() { get_pipeline_component().free_session_id(); }
+ClientSession::~ClientSession() {}
 
 tcp::socket& ClientSession::accept_socket() { return in_socket; }
 

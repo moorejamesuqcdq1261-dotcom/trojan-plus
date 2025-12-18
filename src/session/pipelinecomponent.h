@@ -45,6 +45,7 @@ class PipelineComponent {
     std::weak_ptr<Pipeline> pipeline_owner;
 
     SessionIdType m_session_id;
+    bool m_owns_session_id;
     bool m_is_use_pipeline;
     bool m_is_async_writing;
     bool m_write_close_future;
@@ -57,6 +58,7 @@ class PipelineComponent {
 
   public:
     PipelineComponent(const Config& _config);
+    ~PipelineComponent();
 
     _define_getter(ReadDataCache&, pipeline_data_cache);
     void pipeline_in_recv(const std::string_view& data);

@@ -162,12 +162,12 @@ void PipelineSession::in_send(PipelineRequest::Command cmd, ServerSession& sessi
     auto found = find_and_process_session(session.get_session_id(), [&](Sessions::iterator& it) {
         static_cast<void>(it);
         if (Log::level <= Log::ALL) {
-            _log_with_endpoint_ALL(
-              get_in_endpoint(), "PipelineSession session_id: " + to_string(session.get_session_id()) +
-                                   " <-- send cmd: " + PipelineRequest::get_cmd_string(cmd) +
-                                   (cmd == PipelineRequest::ACK ? (" ack count: " + to_string(ack_count))
-                                                                : (" length:" + to_string(session_data.length()))) +
-                                   " checksum: " + to_string(get_checksum(session_data)));
+        _log_with_endpoint_ALL(
+          get_in_endpoint(), "PipelineSession session_id: " + to_string(session.get_session_id()) +
+                               " <-- send cmd: " + PipelineRequest::get_cmd_string(cmd) +
+                               (cmd == PipelineRequest::ACK ? (" ack count: " + to_string(ack_count))
+                                                            : (" length:" + to_string(session_data.length()))) +
+                               " checksum: " + to_string(get_checksum(session_data)));
         }
 
         sending_data_cache.push_data(
@@ -190,8 +190,8 @@ bool PipelineSession::find_and_process_session(
     if (it == sessions.end()) {
         return false;
     }
-    processor(it);
-    return true;
+            processor(it);
+            return true;
 }
 
 void PipelineSession::process_streaming_data() {
@@ -210,11 +210,11 @@ void PipelineSession::process_streaming_data() {
         }
 
         if (Log::level <= Log::ALL) {
-            _log_with_endpoint_ALL(get_in_endpoint(),
-              "PipelineSession session_id: " + to_string(req.session_id) + " --> recv cmd: " + req.get_cmd_string() +
-                (req.command == PipelineRequest::ACK ? (" ack count: " + to_string(req.ack_count))
-                                                     : (" length:" + to_string(req.packet_data.length()))) +
-                " checksum: " + to_string(get_checksum(req.packet_data)));
+        _log_with_endpoint_ALL(get_in_endpoint(),
+          "PipelineSession session_id: " + to_string(req.session_id) + " --> recv cmd: " + req.get_cmd_string() +
+            (req.command == PipelineRequest::ACK ? (" ack count: " + to_string(req.ack_count))
+                                                 : (" length:" + to_string(req.packet_data.length()))) +
+            " checksum: " + to_string(get_checksum(req.packet_data)));
         }
 
         if (req.command == PipelineRequest::CONNECT) {

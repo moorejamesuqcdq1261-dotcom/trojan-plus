@@ -29,6 +29,7 @@ vector<PipelineComponent::SessionIdType> PipelineComponent::s_free_session_ids;
 
 PipelineComponent::PipelineComponent(const Config& _config)
     : m_session_id(0),
+      m_owns_session_id(false),
       m_is_use_pipeline(false),
       m_is_async_writing(false),
       m_write_close_future(false),
@@ -38,6 +39,10 @@ PipelineComponent::PipelineComponent(const Config& _config)
     _guard;
     pipeline_ack_counter = static_cast<int>(_config.get_experimental().pipeline_ack_window);
     _unguard;
+}
+
+PipelineComponent::~PipelineComponent() {
+    free_session_id();
 }
 
 void PipelineComponent::allocate_session_id() {
@@ -52,14 +57,16 @@ void PipelineComponent::allocate_session_id() {
     } else {
         m_session_id = s_session_id_counter++;
     }
+    m_owns_session_id = true;
     _unguard;
 }
 
 void PipelineComponent::free_session_id() {
     _guard;
-    if (m_session_id != 0) {
+    if (m_session_id != 0 && m_owns_session_id) {
         s_free_session_ids.emplace_back(m_session_id);
         m_session_id = 0;
+        m_owns_session_id = false;
     }
     _unguard;
 }
