@@ -23,12 +23,33 @@ using namespace std;
 list<SSL_SESSION*>SSLSession::sessions;
 
 int SSLSession::new_session_cb(SSL*, SSL_SESSION *session) {
+    // Hold our own reference to avoid dangling pointers when OpenSSL evicts/frees sessions.
+    // Keep the cache bounded to avoid unbounded growth in long-running router deployments.
+    SSL_SESSION_up_ref(session);
     sessions.push_front(session);
+    const size_t kMaxCachedSessions = 4;
+    while (sessions.size() > kMaxCachedSessions) {
+        auto* old = sessions.back();
+        sessions.pop_back();
+        SSL_SESSION_free(old);
+    }
     return 0;
 }
 
 void SSLSession::remove_session_cb(SSL_CTX*, SSL_SESSION *session) {
-    sessions.remove(session);
+    size_t removed = 0;
+    for (auto it = sessions.begin(); it != sessions.end();) {
+        if (*it == session) {
+            it = sessions.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    // Release the references we hold (if any). Removed may be 0 if the session wasn't cached by us.
+    for (size_t i = 0; i < removed; ++i) {
+        SSL_SESSION_free(session);
+    }
 }
 
 SSL_SESSION *SSLSession::get_session() {

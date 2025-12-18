@@ -540,8 +540,12 @@ void Service::udp_async_read() {
             return;
         }
         if (error) {
-            stop();
-            throw runtime_error(error.message());
+            _log_with_date_time(std::string("[udp] async_receive_from error: ") + error.message(), Log::ERROR);
+            // Avoid throwing inside async handler (can crash the whole process). Try to continue if possible.
+            if (udp_socket.is_open()) {
+                udp_async_read();
+            }
+            return;
         }
 
         pair<string, uint16_t> targetdst;
@@ -581,7 +585,8 @@ void Service::udp_async_read() {
               [this](const udp::endpoint& endpoint, const string_view& data) {
                   _guard;
                   if (config.get_run_type() == Config::NAT) {
-                      throw logic_error("[udp] logic fatal error, cannot call in_write function for NAT type!");
+                      _log_with_date_time("[udp] unexpected in_write call in NAT mode", Log::ERROR);
+                      return;
                   }
 
                   boost::system::error_code ec;
@@ -591,7 +596,7 @@ void Service::udp_async_read() {
                       _log_with_endpoint(
                         udp_recv_endpoint, "[udp] dropped a packet due to firewall policy or rate limit");
                   } else if (ec) {
-                      throw runtime_error(ec.message());
+                      _log_with_date_time(std::string("[udp] send_to failed: ") + ec.message(), Log::ERROR);
                   }
                   _unguard;
               },
